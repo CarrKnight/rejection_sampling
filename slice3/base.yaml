@@ -1,0 +1,172 @@
+Flexible:
+  allowFriendshipsAcrossPorts: false
+  biologyInitializer:
+    Multiple Species Abundance:
+      addGarbageSpecies: false
+      factories:
+      - Boxcar Biology with pulses:
+          LInfinity: '68.7'
+          allometricAlpha: '0.0197'
+          allometricBeta: '2.986'
+          cmPerBin: 5.0
+          cumulativePhi: '-1'
+          diffuser: No Diffusion
+          habitabilityAllocator:
+            Equal Allocation:
+              constantValue: '1.0'
+          initialAbundanceAllocator:
+            Single Peak Pyramid Allocator:
+              maxSpread: 6
+              peakBiomass: '1.0'
+              peakX: 1
+              peakY: 1
+              smoothingValue: '0.7'
+          initialBtOverK: '1.0'
+          k: '0.230'
+          lengthAtMaturity: '40'
+          numberOfBins: 25
+          recruitAllocator:
+            Single Peak Pyramid Allocator:
+              maxSpread: 6
+              peakBiomass: '1.0'
+              peakX: 1
+              peakY: 1
+              smoothingValue: '0.7'
+          speciesName: タチウオ
+          steepness: '0.8'
+          virginRecruits: '100'
+          yearlyMortality: '0.375'
+          spawningDayAndProportionOfYearlyRecruits:
+            121: Uniform 0.25 0.75 #spring spawning happens on may day
+            274: Uniform 0.25 0.75 #fall spawning happens on 1st october
+  exogenousCatches:
+    Instantaneous Mortality Exogenous Catches:
+      abundanceBased: true
+      exogenousMortalities: 
+          タチウオ: 0.3
+  fisherDefinitions:
+  - departingStrategy:
+      Full-time Seasonal Retired Decorator:
+        decorated:
+        ##### seems to be going out about 80% of the time
+        ##### but every day if you are full-time
+          Fixed Probability Departing:
+            probabilityToLeavePort: '0.8'
+            checkOnlyOnceADay: true
+        firstYearYouCanSwitch: '1.0'
+        inertia: uniform 1 4
+        maxHoursOutWhenSeasonal: '2304' ### four months
+        minimumVariable: 100
+        probabilityStartingFullTime: '1'
+        targetVariable: '0'
+        variableName: CASH
+        canReturnFromRetirement: false
+    destinationStrategy:
+      Imitator-Explorator:
+        alwaysCopyBest: true
+        automaticallyIgnoreAreasWhereFishNeverGrows: true
+        automaticallyIgnoreMPAs: true
+        backtracksOnBadExploration: true
+        dropInUtilityNeededForUnfriend: '-1.0'
+        ignoreEdgeDirection: true
+        ignoreFailedTrips: false
+        maxInitialDistance: -1.0
+        objectiveFunction:
+          Hourly Profit Objective:
+            opportunityCosts: true
+        probability:
+          Fixed Probability:
+            explorationProbability: '0.2'
+            imitationProbability: '1.0'
+        stepSize: 1.0
+    discardingStrategy: No Discarding
+    fishingStrategy:
+      Tow Limit:
+        towLimits: '9.0' #10 operations max
+        maxDaysOut: '2' # don't stay for too long
+    fuelTankSize: '99999999999'
+    gear:
+      Heterogeneous Selectivity Gear:
+        hourlyGasPriceOverride: 0.0
+        gears:
+          タチウオ:
+            Simple Logistic Selectivity Gear:
+              averageCatchability: '9.288350700000002E-5'
+              litersOfGasConsumedPerHour: '0.0'
+              rounding: false
+              selexParameter1: '7.69'
+              selexParameter2: '0.219'
+    gearStrategy: Never Change Gear
+    holdSize: '1000.0'
+    hourlyVariableCost: 115.6
+    hourlyEffortCost: 735
+    initialFishersPerPort:
+      Port 0: 3
+    literPerKilometer: '0.0'
+    logbook: No Logbook
+    regulation: Anarchy
+    speedInKmh: '13.0'
+    tags: 'red'
+    usePredictors: false
+    weatherStrategy: Ignore Weather
+  gasPricePerLiter: '0'
+  habitatInitializer: All Sand
+  mapInitializer:
+    Simple Map:
+      cellSizeInKilometers: '12.0'  #60km is about the width of the channel
+      coastalRoughness: '0.0'
+      depthSmoothing: '1000000.0'
+      height: '5.0'
+      maxLandWidth: '1.0'
+      width: '6.0'        #basically the maximum distance is  √2*60km diagonally   
+  mapMakerDedicatedRandomSeed: 0
+  market:
+    Many Prices Market:
+      binThresholds: 
+        - 5
+        - 6
+        - 7
+        - 8
+        - 9
+      prices:
+        - 0 ### size limit!
+        - 291.317
+        - 465.851
+        - 621.974
+        - 890.387
+        - 1238.03
+  networkBuilder:
+    Equal Out Degree:
+      allowMutualFriendships: true
+      degree: '2.0'
+      equalOutDegree: true
+  plugins: 
+  #  - Additional Daily Collectors
+    - Spend Save Invest Entry:
+        moneyNeededForANewEntry: '2.5E7'
+        populationName: population0
+        yearlyExpenses: '5000000.0'
+    - SPR Agent:
+        assumedKParameter: '0.283'
+        assumedLengthAtMaturity: '43'
+        assumedLengthBinCm: '5.0'
+        assumedLinf: '96.7' #from fishlife
+        assumedNaturalMortality: '0.375' #from fishlife
+        assumedVarA: '0.00022' #median from fishbase
+        assumedVarB: '3.26' #median from fishbase
+        probabilityOfSamplingEachBoat: '1'
+        simulatedMaxAge: '100.0'
+        simulatedVirginRecruits: '1000.0'
+        speciesName: タチウオ
+        surveyTag: spr_agent      
+  portInitializer:
+    One Port:
+      portPositionX: '5'
+      portPositionY: '0'
+  portSwitching: false
+  tagsToTrackSeparately: 'population0'
+  weatherInitializer:
+    Constant Weather:
+      temperature: '30.0'
+      windOrientation: '0.0'
+      windSpeed: '0.0'

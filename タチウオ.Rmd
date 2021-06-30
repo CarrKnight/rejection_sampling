@@ -1,0 +1,921 @@
+---
+title: "Bungo Channel Demo"
+author: "Ernesto Carrella"
+date: "6/29/2020"
+output: 
+    bookdown::html_document2:
+        number_sections: false
+bibliography: library.bib
+#csl: apa.csl
+link-citations: true
+editor_options: 
+  chunk_output_type: console
+---
+
+
+
+# What's this?
+
+This is a section of a paper I am slowly working on. I have extracted it so that I can share it and think through with people.
+The background of this is that I am trying to use rejection sampling alone to condition ABMs when I have little data.
+I have used rejection sampling tons in Indonesia but precisely because there is little data it's hard then to validate the tool.
+
+So what I did is taking a data-rich set of papers [@Makino2017; @Watari] on the タチウオ fishery in the Bungo channel and tried to re-create it by pretending to know less than what the original papers knew.  
+The application is actually pretty cool as it specifies quite nicely the economic constraints of the japanese boats which makes it perfect for our agent-based model. 
+
+In the end the focus of the paper and this section is more on value of evidence using models instead of our usual bio-economic policy analysis. 
+
+```{r setup, include=FALSE}
+set.seed(0)
+knitr::opts_chunk$set(echo = FALSE, warning= FALSE, message=FALSE,
+                      cache=TRUE,cache.extra = knitr::rand_seed,
+                      dpi = 100, fig.width = 16, fig.height = 9)
+
+library(tidyverse)
+library(gt)
+library(patchwork)
+
+theme_set(theme_light(20))
+
+
+main_directory<-"./"
+
+#### trick from here: https://gist.github.com/dmenne/f8eb291c9e71a5de44764d442e8bdefd
+mcaption = function(tag, caption){
+  # Do not use underscores in tag!
+  stopifnot(length(grep("_", tag)) == 0)
+  cat("<caption>(#tab:", tag, ")", caption, "</caption>", sep="")
+}
+
+`%notin%` = function(x,y) !(x %in% y)
+
+
+```
+
+## Description
+
+In this example we model the Japanese coastal trolling fishery based in Usuki as described in @Makino2017.
+As of 2011 it was composed of 45 boats, all smaller than 5 gross tons, targeting hairtail  (Trichiurus japonicus). Sale price of hairtail depends on its size and letting it grow for 6 months can triple its value.
+The contribution of the Usuki trolling fishery to the overall fishing mortality is however limited as trolling boats share the stock with purse seiners who target other species and land hairtail as a byproduct. 
+The fishery is not data-limited as @Watari presents a full stock assessment. The purpose of this example is one of data-degradation: what changes when we pretend to have less data than what is actually available.
+
+@Makino2017 focuses on the economic side of the fishery: number of fishers is in decline, most of them earn about 5-6M JPY which covers fixed and living costs but is not enough to save the 25M JPY needed to build a new boat.
+The focus on individual boats makes it ideal for an agent-based model analysis and here we create a simple POSEIDON [@Bailey2018a] application for it.
+
+We sketch here the key ideas of the model but leave the full details in the appendix.
+The biological operating model is length-based, with 5cm length-bins using the fixed boxcar method [@Goudriaan1986]. Recruitment is noisy and happens twice a year (spring and autumn) assuming a Beverton-Holt stock-recruitment relationship.
+Geographically fish is spread out over a 5-by-5 grid, each cell a square 12km wide. 
+We model each trolling boat separately. Boats can fish any day of the year and choose the fishing location by trial and error through the explore-exploit-imitate algorithm [@Carrella2019].  
+We track the profits made by each boat. Those that manage to accumulate more cash than their target savings (after accounting for living and fixed costs) spawn a successor (that is, create a new boat that joins the fishery). Those that fail to cover their living costs will eventually leave.  
+The purse seiner fleet is not agentized and is instead a simple constant fishing mortality $F$ applied to the stock at the end of each year.
+
+We run the model for at most 45 years, starting the trolling fishery ab novo at year 1. We condition the model on only six pieces of information. First, total landings (trolling and purse seiners combined) in the fishery have never been above 15,000t. This is evident from figure 2 in @Watari.  Second, current landings of the Usuki trolling fleet is between 250t and 1,850t. The lower bound is used as an historical target in @Makino2017, the upper bound is the non-net fishing mortality computed for 2011 in @Watari. The upper bound is probably too high as it includes other sources of fishing mortality. Third, current SPR is unsustainable but not catastrophically so and we will accept fisheries whose current SPR is between .10 and .25. @Watari cites an SPR for the fishery of .21 in 2011. Fourth, the Usuki trolling fishery today has less than 60 active boats. Fifth, the Usuki trolling fishery represents at most 30% of the total landings for the stock. Sixth, the fishery is at least 30 years old.
+
+Because our model is length rather than age based, we compute SPR via a length-based approximation, assuming median life-history parameters for the species [using Fishlife from @Thorson2017; rFishBase from @Boettiger2012]. In other words, when computing SPR we do not assume we know the correct life-history parameters within the simulation and as such we expect this filter to be quite noisy.
+
+This POSEIDON application is simple and lacks many details, *inter alia* it assumes knife-edge maturity, a simple geography, no seasonal variation in ex-vessel prices and simple stochasticity for the bi-annual spawning pulses. In spite of its simplicity it still contains too many parameters (see table \@ref(tab:priorssmith)) to hope for identification given the little data we condition with.
+
+
+Table: (\#tab:parametertable) A table with all unknown parameters from the POSEIDON simulation we need to randomize. Some (like cost data) have narrow priors but others (like catchability and steepness) are wide
+
+
+| Variable                                                | Distribution                    | Meaning                                                            | Source                                                               |
+|---------------------------------------------------------|---------------------------------|--------------------------------------------------------------------|----------------------------------------------------------------------|
+| catchability                                            | $U[10^{-5},10^{-9}]$            | % of biomass caught per hour spent fishing                         | -                                                                    |
+| $S_1$                                                   | $U6.2,9.3]$                     | Logistic selectivity, first parameter                              | (size limit at 25cm)                                                 |
+| $S_2$                                                   | $U[0.17,0.26]$                  | Logistic selectivity, second parameter                             | (size limit at 25cm)                                                 |
+| Cell with most biomass                                  | $U[1,5] \times U [1,5]$        | Cell in the 5x5 grid with the most biomass                         | -                                                                    |
+| Biomass smoothing                                       | $U[0.1,1]$                        | Parameter defining the geographical dispersion of biomass          | -                                                                    |
+| Virgin recruits $R_0$                                   | $U[37M,62M]$                      | Number of annual recruits at virgin biomass                        | $R_0$ that would generate 10,000t to 200,000t of virgin biomass      |
+| $\Phi$                                                  | $U[0.27,0.31]$                    | Ratio $R_0$ to spawning stock biomass                              | Implied by knife-edge maturity from Fishlife median $L_{\text{mat}}$ |
+| Steepness                                               | $U[0.2,0.99]$                     | Proportion of current recruits to virgin when 20% of biomass left  | -                                                                    |
+| Initial depletion                                       | $U[0.7,1]$                        | Proportion of biomass to virgin available as simulation starts     | -                                                                    |
+| Life history parameters $L_{\infty},K,L_{\text{mat}},M$ | Drawn from Fishlife             | Parameters governing the speed of growth for all fish              | Drawn from Fishlife multi-normal distribution                        |
+| Allometric parameters $a,b$                             | Bootstrap sampled from rFishbase | Parameters converting fish length to weight                        | Sampled with replacement from Fishbase                               |
+| Hourly variable cost (JPY/hr)                           | $U[100,140]$                      | Monetary cost per hour spent at sea (fuel,engine)                  | @Makino2017                                                          |
+| Hourly effort cost (JPY/hr)                             | $U[700,800]$                      | Monetary cost per hour spent fishing (film, bait and boxing)       | @Makino2017                                                          |
+| Hold size (kg)                                          | $U[1000,3000]$                    | Maximum amount of fish transportable by a boat                     | 5GT boats                                                            |
+| Savings target (JPY)                                    | $U[20M,30M]$                      | Money to accumulate to spawn additional boat                       | @Makino2017                                                          |
+| Yearly Expenses                                         | $U[4.5M,7M]$                      | Yearly expenditure (living costs, plus fixed costs)                | @Makino2017 and census                                               |
+| Daily probability of fishing                            | $U[.75,.9]$                       | Probability of going fishing each day of the year                  | Comparing boat numbers with total effort recorded                    |
+| Yearly exogenous fishing mortality                      | $U[.3,.8]$                        | Mortality rate due to other fishers targeting the stock            | -                                                                    |
+
+
+## Value of evidence
+
+We run the model 354,775 times and accept only 743 fisheries. The extremely low acceptance rate (0.2%) is explained by the unnecessarily wide priors, particularly in catchability, steepness and exogenous fishing mortality. Many draws from the prior are fisheries that are not economically viable or biologically sustainable for more than a few years. In terms of marginal distributions most posteriors have not shifted from their priors but many of the parameters that were independent are now correlated. 
+
+The joint distribution of $M$ (natural mortality) and $K$ (growth coefficient) is particularly affected by rejection sampling. The prior of $\frac{M}{K}$, which we inherit from Fishlife, is bell-shaped and centered around 1.3. The posterior is still bell-shaped but shifted to the left (median of 1.09). 
+
+We show in figure \@ref(fig:priorposteriormkratio) how evidence would shift this posterior further.
+In subfigure B we draw the two hypothetical posteriors had we accepted SPR above .3 or below .1 instead of the .1-.25 interval we are actually using. 
+Assuming high SPR moves the $\frac{M}{K}$ posterior left, while low SPR moves posterior right and makes it bimodal.
+This in essence means that low SPR could be a symptom of low $\frac{M}{K}$ (a fish that naturally grows slower and dies quicker) rather than any true signal of stock health.
+Sensitivity of length based SPR to mispecifications of $\frac{M}{K}$ is well understood [@Hordyk2014; @Froese2018; @Hordyk2019;@Froese2019] and here we are simply picking up the conflict between Fishlife's wide priors and using its modal values to compute SPR.
+In other words, on its own, length-based SPR could be either a sign of overfishing or a sign of mispecified life history parameters.
+
+```{r priorposteriormkratio, fig.cap="Ratio between natural mortality M and growth rate K; subfigure A shows prior and posterior distribution of the $\\frac{M}{K}$, the prior is drawn from FishLife and the posterior represents the fisheries that passed all filters, the posterior has shifted mostly to the left ;subfigure B compares the $\\frac{M}{K}$ posterior had we only SPR above 30 (cyan) or below 10 (green); subfigure C shows the posterior achieved by accepting only fisheries who have more than 60 boats active today (orange)."}
+
+color_palette<-fishualize::fish(n = 5, option = "Acanthurus_sohal", end = 1,direction=-1)
+
+
+valid<-read_csv(paste0(main_directory,"/success_slice3.csv"))
+spr_opt<-read_csv(paste0(main_directory,"/slice3_spr_opt.csv"))
+
+spr_pess<-read_csv(paste0(main_directory,"/slice3_spr_pess.csv"))
+
+nobo<-read_csv(paste0(main_directory,"/nobo_slice3.csv"))
+
+
+time_to_collapse<-
+  read_csv(paste0(main_directory,"/time_to_collapse.csv"))
+
+
+list_of_files <- list.files(path = 
+                              paste0(main_directory,
+                                     "/scenarios/")
+                            , recursive = TRUE,
+                            pattern = "masterfile.csv", 
+                            full.names = TRUE)
+
+params <-
+  list_of_files %>%
+  map_dfr(~ read_csv(.)) 
+#%>%
+  #filter(variable %in% interesting_variables))
+
+valid_params<-params %>%
+  filter(filename %in% valid$scenario)
+
+opt_params<-params %>%
+  filter(filename %in% spr_opt$scenario) %>%
+  filter(filename %notin% valid$scenario)
+
+pess_params<-params %>%
+  filter(filename %in% spr_pess$scenario) %>%
+  filter(filename %notin% valid$scenario)
+
+
+
+nobo_params<-params %>%
+  filter(filename %in% nobo$scenario) %>%
+  filter(filename %notin% valid$scenario)
+
+prior_params<-params %>%
+  sample_n(size=20000)
+
+tot_params<-prior_params %>%
+  mutate(id="prior") %>%
+  bind_rows(
+    valid_params %>%
+      mutate(id="posterior")
+  ) %>% 
+  bind_rows(
+    nobo_params %>%
+      mutate(id="nobo")
+  )  %>%
+    bind_rows(
+    opt_params %>%
+      mutate(id="spr")
+  )  %>%
+    bind_rows(
+    pess_params %>%
+      mutate(id="spr_pess")
+  )  %>%
+  separate(sep=";",
+                       col = "biologyInitializer.factories$0.LInfinity;biologyInitializer.factories$0.k;biologyInitializer.factories$0.lengthAtMaturity;biologyInitializer.factories$0.yearlyMortality;biologyInitializer.factories$0.allometricAlpha;biologyInitializer.factories$0.allometricBeta",
+                       into = str_split("biologyInitializer.factories$0.LInfinity;biologyInitializer.factories$0.k;biologyInitializer.factories$0.lengthAtMaturity;biologyInitializer.factories$0.yearlyMortality;biologyInitializer.factories$0.allometricAlpha;biologyInitializer.factories$0.allometricBeta",patter=";")[[1]]) %>%
+  mutate(id=factor(id)) %>%
+  mutate(filename=factor(filename)) %>%
+  mutate_if(is.character,parse_number)
+
+spread_out<-
+  tot_params %>%
+  gather("key","value",-filename,-id)
+
+
+colorer<-function(guidance=TRUE){
+  scale_fill_manual(labels=c("Prior",
+                             "Posterior",
+                             "High SPR",
+                             "Low SPR",
+                             "Many Boats"
+                             ),
+                      breaks=c("prior",
+                               "posterior",
+                               "spr",
+                               "spr_pess",
+                               "nobo"
+                               ),
+                      name="Distribution",
+                      values=color_palette,
+                    drop = FALSE,
+                    guide = guidance)
+}
+#fix names
+spread_out$key %>% str_split(pattern="\\.") ->pippo
+new_key<- map_chr(pippo,~last(.))
+spread_out$key<-  new_key
+
+p1<-spread_out %>% 
+  filter(id %in% c("prior","posterior")) %>%
+  filter(key %in% c("yearlyMortality","k")) %>%
+  pivot_wider(names_from=key,values_from=value) %>%
+  mutate(mkratio=yearlyMortality/k) %>%
+  ggplot() +
+  geom_density(aes(x=mkratio,fill=id),alpha=.7) +
+  ylab("Density") + colorer(FALSE)+
+  xlab(latex2exp::TeX("$\\frac{M}{K}$"))   +
+  coord_cartesian(xlim=c(0.5,3)) 
+  #+ # +
+  #ggtitle("M/K ratio")
+
+
+p2<-spread_out %>% 
+    filter(id %in% c("prior","posterior",
+                     "spr","spr_pess")) %>%
+  filter(key %in% c("yearlyMortality","k")) %>%
+  pivot_wider(names_from=key,values_from=value) %>%
+  mutate(mkratio=yearlyMortality/k) %>%
+  ggplot() +
+  geom_density(aes(x=mkratio,fill=id),alpha=.7) +
+  ylab("Density") +
+  
+  xlab(latex2exp::TeX("$\\frac{M}{K}$"))  +
+  colorer(FALSE)+
+  coord_cartesian(xlim=c(0.5,3))
+
+
+
+
+p3<-spread_out %>% 
+    filter(id %in% c("prior","posterior",
+                     "nobo")) %>%
+  filter(key %in% c("yearlyMortality","k")) %>%
+  pivot_wider(names_from=key,values_from=value) %>%
+  mutate(mkratio=yearlyMortality/k) %>%
+  ggplot() +
+  geom_density(aes(x=mkratio,fill=id),
+               alpha=.7) +
+  ylab("Density") +
+  xlab(latex2exp::TeX("$\\frac{M}{K}$"))  +
+  colorer("legend")+
+  coord_cartesian(xlim=c(0.5,3))
+
+p1/(p2+p3) + plot_annotation(tag_levels = 'A') + plot_layout(guides="collect")  & theme(legend.position = 'bottom')
+```
+
+A far more counterintuitive effect of evidence is the limit on the number of boats (no more than 60 boats in Usuki today) as shown in figure \@ref(fig:priorposteriormkratio), subfigure C.
+If we accept only runs with more than 60 boats, the $\frac{M}{K}$ posterior is bi-modal and shifts further to the right: we expect a higher $\frac{M}{K}$.
+This is counter-intuitive because higher $\frac{M}{K}$ means that the fish grows slower and is less likely to get to maturity. We would expect this stock to be able to sustain only a smaller fleet.
+
+What we uncovered is a collider bias [a Monty Hall effect as in @Burns2004]. It is true that higher $\frac{M}{K}$ implies a more vulnerable fishery: the higher $\frac{M}{K}$ in the prior the fewer years it takes for a random fishery to collapse. 
+High $\frac{M}{K}$ also implies less economic viability: larger fish is paid more and the higher $\frac{M}{K}$ gets the less likely the fish is to get large enough to command a price premium. This however is *a priori* knowledge: *a posteriori* we are not looking at the whole space of fisheries but only the specific space of fisheries that survived until today (at least $250t$ landed in Usuki this year) and still representing only a portion of total landings.
+
+Fisheries with high $\frac{M}{K}$ that survive are quantity-driven rather than value-driven. If fish matures slowly and is less likely to survive, boats need to catch it when it is shorter. If short fish sells for less, boats need to catch more of it per unit of effort.
+Knowing both that $\frac{M}{K}$ is high and that the fishery survived implies that other model parameters must change to make it so.
+This is done mostly by exploiting the wide priors on  weight-length parameters $a,b$.
+In the prior there is no correlation between $\frac{M}{K}$ and weight-length parameters, in the posterior the correlation is 0.88: in an accepted fishery with $\frac{M}{K}=1.2$ a 50cm fish weighs 200g, but at $\frac{M}{K}=2$ it has to weigh 600g.
+The reverse wouldn't work: high $\frac{M}{K}$ with low weight would be economically unviable, low $\frac{M}{K}$ with high weight would exceed landings limits (either in absolute tonnage or relative to the purse seine fleet).
+Therefore, high $\frac{M}{K}$ in the posterior implies a quantity-driven fishery with a high number of boats.
+
+This collider effect can work to our advantage. 
+Even with data, $\frac{M}{K}$ and in particular natural mortality $M$ are hard to estimate and drive many stock assessment results [@Mangel2013].
+Here however we have connected the ratio to weight-length parameters which can be estimated cheaply.
+The heavier the fish, the higher our expected $\frac{M}{K}$ becomes.
+
+
+The same collider effect explains an even more puzzling prediction: runs with lower SPR will “do better” (attract more boats) in the future, as shown in figure \@ref(fig:sprbusinessasusual). As explained above, low SPR is associated with high $\frac{M}{K}$ and high $\frac{M}{K}$ is associated with quantity-driven fisheries with many boats. High participation fisheries are usually filtered away because of our 60 boats limit but participation today may be temporarily low due to recent recruitment failures (critically 10 to 5 years ago). In context then, a low SPR may indicate a high participation fishery that is currently under-strength. This kind of fishery will eventually snap back to its long-term high participation equilibrium.
+
+
+```{r sprbusinessasusual, fig.cap = "Projected and past realizations of participation and recruitment for accepted fisheries as well as fisheries that would have been accepted had SPR evidence been different. Each line is a separate simulation, bolded lines are median values. The subset of runs with low SPR and also M/K ratio above two have been grouped separately (in black). Low SPR today implies higher participation tomorrow if associated with higher M/K. This is better explained by looking at recruitment (subfigure B): these fisheries in equilibrium have higher participation but are over-correcting to low recruitment pulses 5 to 10 years ago and are likely to rebound."}
+
+
+
+#correlation_to_quote<-cor(collapse_mk_post$mkratio,collapse_mk_post$fifty_cm_kg)
+#collapse_mk_post %>%
+#  ggplot()+
+#  geom_point(aes(x=mkratio,y=fifty_cm_kg))
+#
+#
+
+scenario_directory<-"/home/carrknight/code/POSEIDON/docs/20200425 abc_example/slice3/outputs/"
+
+
+list_of_files <- list.files(path = scenario_directory, recursive = FALSE,
+                            pattern = ".*\\$.*\\.csv", 
+                            full.names = TRUE)
+
+
+accepted_simulations<-
+  list_of_files %>%
+  map_dfr(function(x){read_csv(x) %>%
+      mutate(id=basename(x))
+  }
+  )
+
+#nrow(accepted_simulations)
+
+accepted_simulations<-
+  accepted_simulations %>%
+  filter(policy=="BAU") %>%
+  mutate(id=str_replace_all(id,pattern = "\\$",replacement = "/")) %>%
+  mutate(id = str_replace_all(id,pattern="\\.csv",replacement=""))
+
+#nrow(accepted_simulations)
+
+#some models have been run twice, got to remove some
+
+accepted_simulations<-
+  accepted_simulations %>%
+  mutate(id=
+           str_replace(id, "oxfish","POSEIDON")) %>%
+  group_by(id,run,policy,year,variable) %>%
+  filter(row_number()==1)
+
+
+
+successes<- read_csv(
+  paste0(scenario_directory,"..","/success_slice3.csv")
+) %>%
+  rename(validYear=year) %>%
+  mutate(scenario=paste0("/home/carrknight/code/POSEIDON/",scenario))
+
+accepted_simulations<-
+  left_join(accepted_simulations %>% 
+              ungroup() %>%
+              rename(scenario=id) %>%
+              mutate(scenario=
+                       str_replace(scenario, "oxfish","POSEIDON")),
+            successes %>% select(scenario,validYear))
+
+
+##### optimistic
+list_of_files <- list.files(path = "/home/carrknight/code/POSEIDON/docs/20200425 abc_example/slice3/outputs_opt/", recursive = FALSE,
+                            pattern = ".*\\$.*\\.csv", 
+                            full.names = TRUE)
+
+
+optimistic_simulations<-
+  list_of_files %>%
+  map_dfr(function(x){read_csv(x) %>%
+      mutate(id=basename(x))
+  }
+  )
+
+optimistic_simulations<-
+  optimistic_simulations %>%
+  mutate(id=str_replace_all(id,pattern = "\\$",replacement = "/")) %>%
+  mutate(id = str_replace_all(id,pattern="\\.csv",replacement=""))
+
+
+successes<- read_csv(
+  paste0(scenario_directory,"..","/slice3_spr_opt.csv")
+) %>%
+  rename(validYear=year) %>%
+  mutate(scenario=paste0("/home/carrknight/code/POSEIDON/",scenario))
+
+optimistic_simulations<-
+  left_join(optimistic_simulations %>% rename(scenario=id),
+            successes %>% select(scenario,validYear))
+
+
+#### pessimistic
+list_of_files <- list.files(path = "/home/carrknight/code/POSEIDON/docs/20200425 abc_example/slice3/outputs_pess/", 
+                              recursive = FALSE,
+                            pattern = ".*\\$.*\\.csv", 
+                            full.names = TRUE)
+
+
+pessimistic_simulations<-
+  list_of_files %>%
+  map_dfr(function(x){read_csv(x) %>%
+      mutate(id=basename(x))
+  }
+  )
+
+pessimistic_simulations<-
+  pessimistic_simulations %>%
+  mutate(id=str_replace_all(id,pattern = "\\$",replacement = "/")) %>%
+  mutate(id = str_replace_all(id,pattern="\\.csv",replacement=""))
+
+successes<- read_csv(
+  paste0(scenario_directory,"..","/slice3_spr_pess.csv")
+) %>%
+  rename(validYear=year) %>%
+  mutate(scenario=paste0("/home/carrknight/code/POSEIDON/",scenario))
+
+pessimistic_simulations<-
+  left_join(pessimistic_simulations %>% rename(scenario=id),
+            successes %>% select(scenario,validYear))
+
+mkpess_simulations<-pessimistic_simulations %>%
+  filter(scenario %in% 
+          (read_csv(
+            paste0(main_directory,"/slice3_sprpesss_highmkratio.csv")) %>% 
+           mutate(scenario=paste0("/home/carrknight/code/POSEIDON/",filename)) %>% pull(scenario)
+           ))
+
+bind_rows(
+  optimistic_simulations %>% mutate(id="optimistic") ,
+  pessimistic_simulations %>% mutate(id="pessimistic"),
+  mkpess_simulations %>% mutate(id="mkpess"),
+  accepted_simulations %>% mutate(id="accepted")
+)%>%
+    filter(policy=="BAU") -> comparison
+
+
+plot_with_average<-function(total_data=comparison,
+  name_of_variable = "Number Of Active Fishers",
+                            labeller = scales::comma,
+  max_lag = 15){
+
+  
+
+to_plot<-total_data %>%
+  mutate(year_from_policy = year-validYear) %>%
+  filter(year_from_policy>-max_lag) %>%
+  filter(variable == name_of_variable)  
+
+return(
+to_plot %>%
+  ggplot(aes(x=year_from_policy,y=value,col=id)) +
+  geom_line(aes(group=scenario),
+            alpha=.01) +
+  geom_line(aes(x=year_from_policy,y=value,col=id),
+    data=to_plot %>% group_by(year_from_policy,id) %>%
+    summarise(value=mean(value,na.rm=TRUE)),lwd=2) +
+ # facet_wrap(~policy) + 
+  ggtitle(name_of_variable) +
+  scale_y_continuous(labels=labeller)
+)
+}
+
+p1<-plot_with_average(name_of_variable = "Number Of Active Fishers",
+                  max_lag = 15) +
+  xlab("Years from today") +
+  ylab("# of active boats") +
+  scale_color_manual(
+    name="Run",
+    breaks=c(
+      "mkpess",
+      "pessimistic",
+             "accepted",
+             "optimistic"
+             ),
+    labels=c(
+      "Low SPR +\nhigh M/K",
+      "Low SPR",
+             "Accepted",
+             "High SPR"),
+    values= c(
+      "black",
+      "red",
+              "blue",
+              "green")
+  ) +
+  coord_cartesian(ylim=c(0,100))
+
+p2<-plot_with_average(name_of_variable = "タチウオ Recruits",
+                  max_lag = 15,
+                  total_data = comparison ) +
+  xlab("Years from today") +
+  ylab("# of yearly recruits") +
+  scale_color_manual(guide=FALSE,
+    name="Run",
+    breaks=c(
+      "mkpess",
+      "pessimistic",
+             "accepted",
+             "optimistic"
+             ),
+    labels=c(
+      "Low SPR +\nhigh M/K",
+      "Low SPR",
+             "Accepted",
+             "High SPR"),
+    values= c(
+      "black",
+      "red",
+              "blue",
+              "green")
+  )
+  
+
+#p2
+
+p1+p2 + plot_annotation(tag_levels = 'A') + plot_layout(guides="collect")  & theme(legend.position = 'bottom')
+```
+
+
+We can generate another counter-intuitive result by focusing on evidence we did not use. @Makino2017 mentions how the number of Usuki fishers have decreased by 40% in the last 10 years. We did not use this figure because it is the total loss across all fisheries, not hairtail specific. In this paragraph however, we add this as another piece of evidence.
+Again rejection sampling helps us contextualize this piece of information: a large drop in boats may mean an overfished stock, a series of weak recruitments, or a too aggressive undershooting in participation that will self-correct as profits return.
+In figure \@ref(fig:boatsdecline) we show future participation splitting the accepted fisheries between those that suffered at least a 40% boat reduction in the last ten years and the fisheries that didn't. Within 15 years there is no real difference in participation and in fact fisheries that declined rapidly tend to see higher participation in the short run.
+
+```{r boatsdecline, fig.cap ="Projected fishery participation for the next 15 years. Each line is a separate accepted fishery, bolded lines are yearly medians. Accepted fisheries were split into two groups: those that saw at least a 40% decline in boats within the last ten years and those that didn't. Large participation decline is not a factor predicting further drops in the long run and to the contrary may mean larger participation in the short run."}
+
+
+big_decrease_scenario<-
+  accepted_simulations %>%
+  mutate(year_from_policy=year-validYear) %>%
+    filter(year_from_policy %in% c(-10,0)) %>%
+    filter(policy=="BAU") %>%
+    filter(variable=="Number Of Active Fishers") %>%
+    group_by(scenario) %>%
+   mutate(decrease = (value-lag(value))/lag(value) ) %>%
+  filter(decrease < -.4) %>%
+  pull(scenario)
+
+
+accepted_simulations<-accepted_simulations %>% 
+  mutate(id= scenario %in% big_decrease_scenario )
+
+plot_with_average(total_data = accepted_simulations,
+  name_of_variable = "Number Of Active Fishers",
+                  max_lag = 10) +
+  xlab("Years from today") +
+  ylab("# of active boats") +
+  coord_cartesian(ylim=c(0,100)) +
+  scale_color_manual(
+    name="Accepted",
+    breaks=c(
+      TRUE,
+      FALSE
+             ),
+    labels=c(
+      "40+% Decline",
+      "Other\nAccepted"),
+    values= c(
+      "blue",
+      "red")
+  )
+
+# accepted_simulations %>%
+#   filter(variable %in% c(
+#     "Number Of Active Fishers",
+#     "タチウオ Recruits"
+#   )) %>%
+#   mutate(year_from_policy=year-validYear) %>%
+#   ggplot()+
+#   geom_line(
+#     aes(x=year_from_policy,
+#         y=value,
+#         col=policy,
+#         group = interaction(policy,scenario)),alpha=0.6
+#   ) +
+#   facet_wrap(variable~.)
+  
+```
+
+## Policy analysis
+
+For the accepted fisheries, business as usual will not result in any long-term change in the number of fishers or any other important indicator. 
+This we show in figure \@ref(fig:bautotal).
+It remains however a depleted fishery with biomass at approximately 15% of carrying capacity, justifying additional policies. 
+
+```{r bautotal, fig.cap = "Projected participation and biomass for the accepted fisheries when no policy is implemented. Each line is a simulation,the bolded line is the median yearly value. While each individual run will exhibit noise and short term trends, the overall dynamic is one of long-term equilibrium around current values."}
+scenario_directory<-"/home/carrknight/code/POSEIDON/docs/20200425 abc_example/slice3/outputs/"
+
+
+list_of_files <- list.files(path = scenario_directory, recursive = FALSE,
+                            pattern = ".*\\$.*\\.csv", 
+                            full.names = TRUE)
+
+
+accepted_simulations<-
+  list_of_files %>%
+  map_dfr(function(x){read_csv(x) %>%
+      mutate(id=basename(x))
+  }
+  )
+
+
+accepted_simulations<-
+  accepted_simulations %>%
+  filter(policy %in% 
+           c("BAU" )
+         
+         ) %>%
+  mutate(id=str_replace_all(id,pattern = "\\$",replacement = "/")) %>%
+  mutate(id = str_replace_all(id,pattern="\\.csv",replacement=""))
+
+## remove repeated runs
+accepted_simulations<-
+  accepted_simulations %>%
+  mutate(id=
+           str_replace(id, "oxfish","POSEIDON")) %>%
+  group_by(id,run,policy,year,variable) %>%
+  filter(row_number()==1)
+
+
+successes<- read_csv(
+  paste0(scenario_directory,"..","/success_slice3.csv")
+) %>%
+  rename(validYear=year) %>%
+  mutate(scenario=paste0("/home/carrknight/code/POSEIDON/",scenario))
+
+accepted_simulations<-
+  left_join(accepted_simulations %>%
+              rename(scenario=id),
+            successes %>% select(scenario,validYear))
+
+### create additional metrics
+accepted_simulations<-
+  accepted_simulations %>%
+    pivot_wider(names_from=variable,
+                values_from=value) %>% 
+  mutate(earning_per_landing = `タチウオ Earnings`/`タチウオ Landings`) %>%
+  mutate(profit_per_trip = (`Average Trip Earnings`-`Average Trip Variable Costs`)) %>%
+  mutate(cpue = (`タチウオ Landings`/`Total Effort`)) %>% 
+    mutate(cphr = (`タチウオ Landings`/`Total Hours Out of population0`)) %>% 
+  mutate(landings_ratio = `タチウオ Landings`/`Exogenous catches of タチウオ` )   %>%
+    gather("variable","value",-run,-year,-policy,-scenario,-validYear)
+
+######################################
+
+
+plot_with_average<-function(
+  total_data=accepted_simulations,
+  name_of_variable = "Number Of Active Fishers",
+                            labeller = scales::comma,
+  max_lag = 3){
+
+
+to_plot<-total_data %>%
+  mutate(year_from_policy = year-validYear) %>%
+  filter(year_from_policy>-max_lag) %>%
+  filter(variable == name_of_variable)  
+
+return(
+to_plot %>%
+  ggplot(aes(x=year_from_policy,y=value,col=policy)) +
+  geom_line(aes(group=interaction(scenario,policy)),
+            alpha=.01) +
+  geom_line(aes(x=year_from_policy,y=value,col=policy),
+    data=to_plot %>% group_by(year_from_policy,policy) %>%
+    summarise(value=median(value,na.rm=TRUE)),lwd=2) +
+  ggtitle(name_of_variable) +
+  xlab("Years from today")+
+  scale_y_continuous(labels=labeller)
+)
+}
+
+p1<-
+  plot_with_average(name_of_variable="Number Of Active Fishers") + 
+  scale_color_manual(guide=FALSE,
+                     values=c("black")) +
+  ggtitle("") +
+  coord_cartesian(ylim=c(0,70)) +
+    scale_y_continuous(name="Active Fishers",
+                     labels = scales::comma) 
+
+p2<-
+  plot_with_average(name_of_variable="Biomass タチウオ") + 
+  scale_color_manual(guide=FALSE,
+                     values=c("black"))  + coord_cartesian(ylim=c(0,5000*1000)) +
+  scale_y_continuous(name="Biomass タチウオ (kg)",
+                     labels = scales::comma) +
+  ggtitle("")
+
+  p1 + p2  + plot_annotation(tag_levels = 'A') +
+    
+    plot_annotation(
+  title = 'Business as usual projections'
+) + 
+    plot_layout(guides="collect")  & theme(legend.position = 'bottom') 
+  
+  
+### current biomass (for later)
+  # accepted_simulations %>% filter(policy=="BAU") %>%
+  #   filter(year==validYear) %>%
+  #   filter(variable=="Biomass タチウオ") %>% pull(value) %>% mean()
+  # 
+  # accepted_simulations %>% filter(policy=="BAU") %>%
+  #   filter(year==validYear) %>%
+  #   filter(variable=="Biomass タチウオ") %>% pull(value) %>% sd()
+```
+
+We assume here that we can only enforce policies on the Usuki trolling fleet and cannot affect fishing mortality outside of it.
+Because we constrained the Usuki fishery to represent at most 30% of the landings, we cannot expect regulations to achieve much rebuilding.
+
+We can still make a difference for the economic health of this fleet in two ways. First, we could try marginally improving biomass in order to increase CPUE and therefore profitability. Second, we could try changing selectivity to increase the average size of fish caught and therefore earning more money for each ton of fish landed.
+
+We compare three policies. The first is just closing down the fishery to new entrants and re-entry. The second combines the first policy with imposing a limit of 200 days a year for fishing. The third is to combine the first policy with mandating a new gear that catches larger fish (specifically, increases by 10% $S_1$ and decreases by 10% $S_2$ of the logistic selectivity).
+
+While seasonal closures do achieve higher profits per trip and higher selectivity increases revenue per unit caught, these benefits are negated by the purse seine non-Usuki fishery which increases its relative importance in landings. 
+Seasonal closures generate higher profits per trip but these fail to cover fixed costs.
+If the overall objective is either increased profits or higher biomass, banning entry/re-entry alone performs just as well as more complex policies.
+We show these results in figure \@ref(fig:policytachiuo).
+
+
+```{r policytachiuo, fig.cap="Key indicators projections for three policies (no entry or re-entry, 200 days fishing limit, higher selectivity); each line is a separate fishery, bolded lines are the median yearly value. Better selectivity increases revenue per kg caught (subfigure D) and fishing limit increases profits per trip (subfigure B). In general however all policies cause more landings to occur outside the Usuki trolling fishery (subfigure E) and selectivity improvements do not improve overall savings any better than just closing to new entrants (subfigure  F)"}
+scenario_directory<-"/home/carrknight/code/POSEIDON/docs/20200425 abc_example/slice3/outputs/"
+
+
+list_of_files <- list.files(path = scenario_directory, recursive = FALSE,
+                            pattern = ".*\\$.*\\.csv", 
+                            full.names = TRUE)
+
+
+accepted_simulations<-
+  list_of_files %>%
+  map_dfr(function(x){read_csv(x) %>%
+      mutate(id=basename(x))
+  }
+  )
+
+
+accepted_simulations<-
+  accepted_simulations %>%
+  filter(policy %in% 
+           c("noentry",
+           "hard_seasonal_closure",
+           "selectivity_two" )
+         
+         ) %>%
+  mutate(id=str_replace_all(id,pattern = "\\$",replacement = "/")) %>%
+  mutate(id = str_replace_all(id,pattern="\\.csv",replacement=""))
+
+## remove repeated runs
+accepted_simulations<-
+  accepted_simulations %>%
+  mutate(id=
+           str_replace(id, "oxfish","POSEIDON")) %>%
+  group_by(id,run,policy,year,variable) %>%
+  filter(row_number()==1)
+
+
+successes<- read_csv(
+  paste0(scenario_directory,"..","/success_slice3.csv")
+) %>%
+  rename(validYear=year) %>%
+  mutate(scenario=paste0("/home/carrknight/code/POSEIDON/",scenario))
+
+accepted_simulations<-
+  left_join(accepted_simulations %>%
+              rename(scenario=id),
+            successes %>% select(scenario,validYear))
+
+### create additional metrics
+accepted_simulations<-
+  accepted_simulations %>%
+    pivot_wider(names_from=variable,
+                values_from=value) %>% 
+  mutate(earning_per_landing = `タチウオ Earnings`/`タチウオ Landings`) %>%
+  mutate(profit_per_trip = (`Average Trip Earnings`-`Average Trip Variable Costs`)) %>%
+  mutate(cpue = (`タチウオ Landings`/`Total Effort`)) %>% 
+    mutate(cphr = (`タチウオ Landings`/`Total Hours Out of population0`)) %>% 
+  mutate(landings_ratio = `タチウオ Landings`/`Exogenous catches of タチウオ` )   %>%
+    gather("variable","value",-run,-year,-policy,-scenario,-validYear)
+
+
+plot_with_average<-function(
+  total_data=accepted_simulations,
+  name_of_variable = "Number Of Active Fishers",
+                            labeller = scales::comma,
+  max_lag = 3){
+
+
+to_plot<-total_data %>%
+  mutate(year_from_policy = year-validYear) %>%
+  filter(year_from_policy>-max_lag) %>%
+  filter(variable == name_of_variable)  
+
+return(
+to_plot %>%
+  ggplot(aes(x=year_from_policy,y=value,col=policy)) +
+  geom_line(aes(group=interaction(scenario,policy)),
+            alpha=.01) +
+  geom_line(aes(x=year_from_policy,y=value,col=policy),
+    data=to_plot %>% group_by(year_from_policy,policy) %>%
+    summarise(value=median(value,na.rm=TRUE)),lwd=2) +
+  ggtitle(name_of_variable) +
+  xlab("Years from today")+
+  scale_y_continuous(labels=labeller)
+)
+}
+
+p1<-
+  plot_with_average(name_of_variable="Number Of Active Fishers") +
+  coord_cartesian(ylim=c(0,70)) +
+  scale_color_discrete(
+    name="Policy",
+    breaks=c("noentry",
+             "hard_seasonal_closure",
+             "selectivity_two"),
+    labels=c("No-Entry",
+             "Seasonal\nClosure",
+             "Increased\nSelectivity")
+  ) +
+  ggtitle("Participation") + 
+  ylab("# of boats")
+
+
+p2<-plot_with_average(name_of_variable="profit_per_trip") +
+  coord_cartesian(ylim=c(0,50000)) +
+  scale_y_continuous(name="Profit per trip (JPY)",
+                     labels = scales::comma) +
+  scale_color_discrete(guide=FALSE,
+    name="Policy",
+    breaks=c("noentry",
+             "hard_seasonal_closure",
+             "selectivity_two"),
+    labels=c("No-Entry",
+             "Seasonal\nClosure",
+             "Increased\nSelectivity")
+  ) +
+  ggtitle("Profit per trip")
+
+
+p3<-plot_with_average(name_of_variable="earning_per_landing") +
+  coord_cartesian(ylim=c(1000,1250)) +
+  scale_y_continuous(name="Revenue per unit caught (JPY/kg)",
+                     labels = scales::comma) +
+  scale_color_discrete(guide=FALSE,
+    name="Policy",
+    breaks=c("noentry",
+             "hard_seasonal_closure",
+             "selectivity_two"),
+    labels=c("No-Entry",
+             "Seasonal\nClosure",
+             "Increased\nSelectivity")
+  )  +
+  ggtitle(label = "Revenue (JPY/kg)")
+
+
+
+p4<-plot_with_average(name_of_variable="landings_ratio") +
+  coord_cartesian(ylim=c(0,.4)) +
+  scale_y_continuous(name="Usuki landings as % of whole",
+                     labels = scales::percent) +
+  scale_color_discrete(guide=FALSE,
+    name="Policy",
+    breaks=c("noentry",
+             "hard_seasonal_closure",
+             "selectivity_two"),
+    labels=c("No-Entry",
+             "Seasonal\nClosure",
+             "Increased\nSelectivity")
+  )  +
+  ggtitle(label = "Importance")
+
+p5<-plot_with_average(name_of_variable="Biomass タチウオ") +
+  coord_cartesian(ylim=c(0,5000*1000)) +
+  scale_y_continuous(name="Biomass タチウオ (kg)",
+                     labels = scales::comma) +
+  scale_color_discrete(guide=FALSE,
+    name="Policy",
+    breaks=c("noentry",
+             "hard_seasonal_closure",
+             "selectivity_two"),
+    labels=c("No-Entry",
+             "Seasonal\nClosure",
+             "Increased\nSelectivity")
+  )  +
+  ggtitle(label = "Biomass")
+
+p6<-plot_with_average(name_of_variable="Actual Average Cash Balance") +
+  geom_hline(yintercept = 25000000,col="black",lty=2) +
+  coord_cartesian(ylim=c(-5000000,50000000)) +
+  scale_y_continuous(name="Average Savings (JPY/boat)",
+                     labels = scales::comma) +
+  scale_color_discrete(guide=FALSE,
+    name="Policy",
+    breaks=c("noentry",
+             "hard_seasonal_closure",
+             "selectivity_two"),
+    labels=c("No-Entry",
+             "Seasonal\nClosure",
+             "Increased\nSelectivity")
+  )  +
+  ggtitle(label = "Savings")
+
+# p6
+
+(p1+p2+p5)/(p3+p4+p6)  + plot_annotation(tag_levels = 'A') + plot_layout(guides="collect")  & theme(legend.position = 'bottom')
+```
+
+
+
+
+<!-- ## Regression? -->
+
+<!-- * In practice BAU contains two set of fisheries: those whose long term equilibrium is within the number of boats we allowed and those that  -->
+
+## Comparison to data-rich results
+
+Biomass in the stock assessment produced in @Watari is estimated at 4,896t in 2011. Here the mean current biomass is 3,477t with standard deviation of 1,806t. 
+We are about one standard deviation away using only limited evidence.
+
+The main difference between our work and the data-rich simulations in @Makino2017 is that our results are far more optimistic in the status quo. In the original data-rich work the unmanaged fishery constantly deteriorates, both biologically and economically.
+Our projections instead show a long term equilibrium around current values.
+
+The discrepancy can be explained by the underlying differences in the economic model.
+In our paper boats quit when earnings dry up and bank balances turn negative. This helps the fishery recover over time and avoid collapses.
+In @Makino2017 however, fishing mortality is a free parameter and as such fishing pressure can continue unabated.
+
+One contributing factor for discrepancies is also our choice for life-history parameters. 
+We used "off-the-shelf" FishLife distributions as priors. These are wide and not necessarily centered near the real values from the stock assessment.
+For example, in its stock assessment @Watari assumes maximum age for hairtail at 5 (the maximum ever observed in the area). Using @Quinn2009 thumb rule [@Hordyk2014] this would imply a natural mortality of at least 0.9. Fishlife average is 0.39 with a standard deviation of 0.11.
+
+# References

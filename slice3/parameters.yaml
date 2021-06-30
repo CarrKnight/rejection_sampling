@@ -1,0 +1,107 @@
+##### gear
+- !!uk.ac.ox.oxfish.maximization.generic.SimpleOptimizationParameter
+  addressToModify: fisherDefinitions$0.gear.gears~タチウオ.averageCatchability
+  alwaysPositive: false
+  maximum: 1.0E-5
+  minimum: 1.0E-7
+- !!uk.ac.ox.oxfish.maximization.generic.SimpleOptimizationParameter
+  addressToModify: fisherDefinitions$0.gear.gears~タチウオ.selexParameter1
+  alwaysPositive: false
+  maximum: 9.4
+  minimum: 6.2
+- !!uk.ac.ox.oxfish.maximization.generic.SimpleOptimizationParameter
+  addressToModify: fisherDefinitions$0.gear.gears~タチウオ.selexParameter2
+  alwaysPositive: false
+  maximum: 0.27
+  minimum: 0.17
+  ###### geography stuff
+- !!uk.ac.ox.oxfish.maximization.generic.MultipleOptimizationParameter
+  addressesToModify: 
+  - biologyInitializer.factories$0.initialAbundanceAllocator.peakX
+  - biologyInitializer.factories$0.recruitAllocator.peakX  
+  alwaysPositive: false
+  maximum: 4
+  minimum: 1
+- !!uk.ac.ox.oxfish.maximization.generic.MultipleOptimizationParameter
+  addressesToModify: 
+  - biologyInitializer.factories$0.initialAbundanceAllocator.peakY
+  - biologyInitializer.factories$0.recruitAllocator.peakY  
+  alwaysPositive: false
+  maximum: 4
+  minimum: 1  
+- !!uk.ac.ox.oxfish.maximization.generic.MultipleOptimizationParameter
+  addressesToModify: 
+  - biologyInitializer.factories$0.initialAbundanceAllocator.smoothingValue
+  - biologyInitializer.factories$0.recruitAllocator.smoothingValue  
+  alwaysPositive: false
+  maximum: 2
+  minimum: .1  
+#### recruitment
+- !!uk.ac.ox.oxfish.maximization.generic.SimpleOptimizationParameter
+  addressToModify: biologyInitializer.factories$0.virginRecruits
+  alwaysPositive: false
+  maximum: 62236511
+  minimum: 37341904
+- !!uk.ac.ox.oxfish.maximization.generic.SimpleOptimizationParameter
+  addressToModify: biologyInitializer.factories$0.cumulativePhi
+  alwaysPositive: false
+  maximum: 0.3041611
+  minimum: 0.273745
+- !!uk.ac.ox.oxfish.maximization.generic.SimpleOptimizationParameter
+  addressToModify: biologyInitializer.factories$0.steepness
+  alwaysPositive: false
+  maximum: 0.99
+  minimum: 0.4
+- !!uk.ac.ox.oxfish.maximization.generic.SimpleOptimizationParameter
+  addressToModify: biologyInitializer.factories$0.initialBtOverK
+  alwaysPositive: false
+  maximum: 1.0
+  minimum: 0.7
+#####life history parameters
+- !!uk.ac.ox.oxfish.experiments.indonesia.ReadFromCSVOptimizationParameter
+  addressForEachColumn:
+  - biologyInitializer.factories$0.LInfinity
+  - biologyInitializer.factories$0.k
+  - biologyInitializer.factories$0.lengthAtMaturity
+  - biologyInitializer.factories$0.yearlyMortality
+  - biologyInitializer.factories$0.allometricAlpha
+  - biologyInitializer.factories$0.allometricBeta
+  csvHasHeader: true
+  csvPathFile: docs/20200425 abc_example/inputs_simple/biology_タチウオ.csv
+### boats
+- !!uk.ac.ox.oxfish.maximization.generic.SimpleOptimizationParameter
+  addressToModify: fisherDefinitions$0.hourlyVariableCost
+  alwaysPositive: false
+  maximum: 140
+  minimum: 100
+- !!uk.ac.ox.oxfish.maximization.generic.SimpleOptimizationParameter
+  addressToModify: fisherDefinitions$0.hourlyEffortCost
+  alwaysPositive: false
+  maximum: 800
+  minimum: 600     
+- !!uk.ac.ox.oxfish.maximization.generic.SimpleOptimizationParameter
+  addressToModify: fisherDefinitions$0.holdSize
+  alwaysPositive: false
+  maximum: 3000
+  minimum: 1000    
+- !!uk.ac.ox.oxfish.maximization.generic.SimpleOptimizationParameter
+  addressToModify: plugins$0.moneyNeededForANewEntry
+  alwaysPositive: false
+  maximum: 30000000.0
+  minimum: 20000000
+- !!uk.ac.ox.oxfish.maximization.generic.SimpleOptimizationParameter
+  addressToModify: plugins$0.yearlyExpenses
+  alwaysPositive: false
+  maximum: 7000000
+  minimum: 4500000    
+- !!uk.ac.ox.oxfish.maximization.generic.SimpleOptimizationParameter
+  addressToModify: fisherDefinitions$0.departingStrategy.decorated.probabilityToLeavePort
+  alwaysPositive: false
+  maximum: .9
+  minimum: .75
+- !!uk.ac.ox.oxfish.maximization.generic.SimpleOptimizationParameter
+  addressToModify: exogenousCatches.exogenousMortalities~タチウオ
+  alwaysPositive: false
+  rawNumber: true
+  maximum: 0.8
+  minimum: 0.3
